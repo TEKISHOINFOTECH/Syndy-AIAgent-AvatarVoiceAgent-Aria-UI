@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       .filter((msg: any) => msg.type !== 'system')
       .map((msg: any) => ({
         timestamp: msg.timestamp,
-        speaker: msg.sender,
+        speaker: msg.speaker,  // ✅ FIXED: was msg.sender, should be msg.speaker
         message: msg.message,
         type: msg.type,
       }));
@@ -28,15 +28,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call backend to save transcript
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+    console.log(`� Sending ${formattedTranscript.length} messages to backend for LLM extraction and save`);
+
+    // Call backend - it will use LLM to extract name/company and save to DB
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5001';
     
-    const response = await fetch(`${backendUrl}/save-conversation`, {
+    console.log(`🔗 Calling backend at: ${backendUrl}/update-client-chat`);
+    
+    // Send transcript to backend - backend will extract name/company using LLM
+    const response = await fetch(`${backendUrl}/update-client-chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ chat_history: formattedTranscript }),
+      body: JSON.stringify({ 
+        chat_history: formattedTranscript,
+        use_llm_extraction: true  // Tell backend to use LLM extraction
+      }),
     });
 
     if (!response.ok) {
@@ -46,9 +54,13 @@ export async function POST(request: Request) {
 
     const result = await response.json();
 
+    console.log(`✅ Backend responded - Name: ${result.name}, Company: ${result.company}`);
+
     return NextResponse.json({
-      success: true,
-      ...result,
+      success: result.success || true,
+      name: result.name,
+      company: result.company,
+      message_count: result.messages_saved || formattedTranscript.length,
     });
   } catch (error) {
     console.error('Error saving transcript:', error);
