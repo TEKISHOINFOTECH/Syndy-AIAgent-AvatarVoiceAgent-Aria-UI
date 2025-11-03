@@ -38,10 +38,8 @@ export default function AvatarComponent() {
 
         if (formattedTranscript.length === 0) {
           console.log('⚠️ No messages to save (only system messages)');
-          setIsChatActive(false);
-          setTranscript([]);
-          setIsLoading(false);
-          setIsSaving(false);
+          // Close tab/window immediately if no messages
+          closeOrNavigateBack();
           return;
         }
 
@@ -68,28 +66,60 @@ export default function AvatarComponent() {
           console.log('✅ Transcript saved successfully');
           console.log(`💾 Saved for: ${result.name} from ${result.company}`);
           console.log(`📊 Messages saved: ${result.message_count}`);
+          
+          // Show brief success message then close
+          alert(`✅ Chat saved successfully for ${result.name} from ${result.company}!`);
+          
+          // Close the tab/window or navigate back
+          closeOrNavigateBack();
         } else {
           console.error('❌ Failed to save transcript:', result.error);
-          setErrorMessage(`Failed to save conversation: ${result.error}`);
+          alert(`⚠️ Failed to save: ${result.error}`);
+          // Still close even on error
+          closeOrNavigateBack();
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           console.error('❌ Save timeout: Taking too long');
-          setErrorMessage('Save is taking longer than expected. It may still complete in the background.');
+          alert('⚠️ Save timeout. It may complete in background.');
         } else {
           console.error('❌ Error saving transcript:', error);
-          setErrorMessage('Failed to save conversation. Please check the console for details.');
+          alert('❌ Failed to save conversation.');
         }
+        // Close even on error
+        closeOrNavigateBack();
       } finally {
         setIsSaving(false);
       }
     } else {
       console.log('ℹ️ No transcript to save');
+      // Close immediately if no transcript
+      closeOrNavigateBack();
     }
+  };
 
-    setIsChatActive(false);
-    setTranscript([]);
-    setIsLoading(false);
+  // Helper function to close tab or navigate back
+  const closeOrNavigateBack = () => {
+    console.log('🔒 Closing chat interface...');
+    
+    // Try to close the window/tab (works if opened via window.open)
+    if (window.opener) {
+      // This window was opened by another window
+      window.close();
+    } else {
+      // Try to go back in history
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        // If no history, try to close (browser may block this)
+        window.close();
+        
+        // If close is blocked, show message
+        setTimeout(() => {
+          alert('✅ Chat saved! You can close this tab now.');
+        }, 100);
+      }
+    }
   };
 
   const handleError = (error: string) => {
