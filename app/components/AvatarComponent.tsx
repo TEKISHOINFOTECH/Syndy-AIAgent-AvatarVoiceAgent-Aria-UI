@@ -11,12 +11,17 @@ export default function AvatarComponent() {
   const [isLoading, setIsLoading] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [room, setRoom] = useState<any>(null);
 
   const handleStartChat = async () => {
     setIsLoading(true);
     setErrorMessage('');
     setTranscript([]); // Clear previous transcript
     setIsChatActive(true);
+  };
+
+  const handleRoomUpdate = (roomObject: any) => {
+    setRoom(roomObject);
   };
 
   const handleEndChat = async () => {
@@ -38,14 +43,16 @@ export default function AvatarComponent() {
 
         if (formattedTranscript.length === 0) {
           console.log('⚠️ No messages to save (only system messages)');
-          setIsChatActive(false);
-          setTranscript([]);
-          setIsLoading(false);
-          setIsSaving(false);
+          // Close tab/window immediately if no messages
+          closeOrNavigateBack();
           return;
         }
 
         console.log(`📊 Saving ${formattedTranscript.length} messages...`);
+
+        // Get room name from LiveKit room if available
+        const roomName = (room as any)?.name;
+        console.log(`🏠 Room name: ${roomName || 'not available'}`);
 
         // Call API to save transcript with timeout
         const controller = new AbortController();
@@ -56,7 +63,10 @@ export default function AvatarComponent() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ transcript: formattedTranscript }),
+          body: JSON.stringify({ 
+            transcript: formattedTranscript,
+            room_name: roomName  // Pass room name to backend
+          }),
           signal: controller.signal,
         });
 
@@ -68,17 +78,20 @@ export default function AvatarComponent() {
           console.log('✅ Transcript saved successfully');
           console.log(`💾 Saved for: ${result.name} from ${result.company}`);
           console.log(`📊 Messages saved: ${result.message_count}`);
+          
+          // Show brief success message then close/navigate
+          alert(`✅ Chat saved successfully for ${result.name} from ${result.company}!`);
         } else {
           console.error('❌ Failed to save transcript:', result.error);
-          setErrorMessage(`Failed to save conversation: ${result.error}`);
+          alert(`⚠️ Failed to save: ${result.error}`);
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           console.error('❌ Save timeout: Taking too long');
-          setErrorMessage('Save is taking longer than expected. It may still complete in the background.');
+          alert('⚠️ Save timeout. It may complete in background.');
         } else {
           console.error('❌ Error saving transcript:', error);
-          setErrorMessage('Failed to save conversation. Please check the console for details.');
+          alert('❌ Failed to save conversation.');
         }
       } finally {
         setIsSaving(false);
@@ -87,9 +100,48 @@ export default function AvatarComponent() {
       console.log('ℹ️ No transcript to save');
     }
 
-    setIsChatActive(false);
-    setTranscript([]);
-    setIsLoading(false);
+    // Always navigate back after save attempt (success or failure)
+    closeOrNavigateBack();
+  };
+
+  // Helper function to close tab or navigate back
+  const closeOrNavigateBack = () => {
+    console.log('🔒 Closing chat interface and checking for return URL...');
+    
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const returnUrl = urlParams.get('returnUrl');
+    const step = urlParams.get('step');
+    const source = urlParams.get('source');
+    
+    console.log('Return URL:', returnUrl);
+    console.log('Next Step:', step);
+    console.log('Source:', source);
+    
+    // ✅ Navigate back to the card scanning app
+    if (returnUrl) {
+      console.log('🔄 Returning to:', returnUrl);
+      window.location.href = decodeURIComponent(returnUrl);
+    } else {
+      // Fallback: Try to close the window/tab (works if opened via window.open)
+      if (window.opener) {
+        console.log('🔒 Closing tab (opened by another window)');
+        window.close();
+      } else if (window.history.length > 1) {
+        console.log('⬅️ Going back in history');
+        window.history.back();
+      } else {
+        console.log('⚠️ No return URL or history, trying to close tab');
+        window.close();
+        
+        // If close is blocked, show message
+        setTimeout(() => {
+          if (!window.closed) {
+            alert('✅ Chat saved! You can close this tab now.');
+          }
+        }, 100);
+      }
+    }
   };
 
   const handleError = (error: string) => {
@@ -132,6 +184,7 @@ export default function AvatarComponent() {
               isActive={isChatActive} 
               onError={handleError}
               onTranscriptUpdate={handleTranscriptUpdate}
+              onRoomUpdate={handleRoomUpdate}
             />
           </div>
         </div>
