@@ -10,10 +10,9 @@ interface LiveKitComponentProps {
   isActive: boolean;
   onError: (error: string) => void;
   onTranscriptUpdate?: (transcript: TranscriptMessage[]) => void;
-  onRoomUpdate?: (room: any) => void;
 }
 
-export default function LiveKitComponent({ isActive, onError, onTranscriptUpdate, onRoomUpdate }: LiveKitComponentProps) {
+export default function LiveKitComponent({ isActive, onError, onTranscriptUpdate }: LiveKitComponentProps) {
   const { room, connectionStatus, connectToRoom, disconnectRoom, toggleMicrophone } = useLiveKit();
   const { transcript, isVisible, toggleVisibility, clearTranscript } = useTranscript({ room });
   const [isMicMuted, setIsMicMuted] = useState(false);
@@ -24,13 +23,6 @@ export default function LiveKitComponent({ isActive, onError, onTranscriptUpdate
       onTranscriptUpdate(transcript);
     }
   }, [transcript, onTranscriptUpdate]);
-
-  // Update parent component with room object
-  useEffect(() => {
-    if (onRoomUpdate) {
-      onRoomUpdate(room);
-    }
-  }, [room, onRoomUpdate]);
 
   useEffect(() => {
     if (isActive) {
