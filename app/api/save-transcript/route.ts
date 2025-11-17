@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { transcript, room_name } = await request.json();
+    const { transcript } = await request.json();
 
     if (!transcript || transcript.length === 0) {
       return NextResponse.json(
@@ -28,17 +28,14 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(`📊 Sending ${formattedTranscript.length} messages to backend for saving`);
-    if (room_name) {
-      console.log(`🏠 Room name: ${room_name}`);
-    }
+    console.log(`� Sending ${formattedTranscript.length} messages to backend for LLM extraction and save`);
 
-    // Call backend - it will use agent context or LLM to extract name/company and save to DB
+    // Call backend - it will use LLM to extract name/company and save to DB
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5001';
     
     console.log(`🔗 Calling backend at: ${backendUrl}/update-client-chat`);
     
-    // Send transcript to backend with room name for context lookup
+    // Send transcript to backend - backend will extract name/company using LLM
     const response = await fetch(`${backendUrl}/update-client-chat`, {
       method: 'POST',
       headers: {
@@ -46,8 +43,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({ 
         chat_history: formattedTranscript,
-        room_name: room_name,  // Pass room name to lookup agent context
-        use_llm_extraction: true  // Fallback to LLM if context not found
+        use_llm_extraction: true  // Tell backend to use LLM extraction
       }),
     });
 
