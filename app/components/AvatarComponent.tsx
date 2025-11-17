@@ -123,24 +123,14 @@ export default function AvatarComponent() {
       console.log('🔄 Returning to:', returnUrl);
       window.location.href = decodeURIComponent(returnUrl);
     } else {
-      // Fallback: Try to close the window/tab (works if opened via window.open)
-      if (window.opener) {
-        console.log('🔒 Closing tab (opened by another window)');
-        window.close();
-      } else if (window.history.length > 1) {
-        console.log('⬅️ Going back in history');
-        window.history.back();
-      } else {
-        console.log('⚠️ No return URL or history, trying to close tab');
-        window.close();
-        
-        // If close is blocked, show message
-        setTimeout(() => {
-          if (!window.closed) {
-            alert('✅ Chat saved! You can close this tab now.');
-          }
-        }, 100);
-      }
+      // ✅ Reset to welcome screen instead of closing/navigating
+      console.log('🏠 Resetting to welcome screen');
+      setIsChatActive(false);
+      setTranscript([]);
+      setRoom(null);
+      setErrorMessage('');
+      setIsLoading(false); // ✅ CRITICAL: Reset loading state
+      setIsSaving(false);  // ✅ CRITICAL: Reset saving state
     }
   };
 
