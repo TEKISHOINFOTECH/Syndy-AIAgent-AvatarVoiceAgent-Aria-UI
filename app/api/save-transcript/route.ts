@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     if (!transcript || transcript.length === 0) {
       return NextResponse.json(
         { error: 'No transcript provided' },
-        { status: 400 }
+        { status: 200 }
       );
     }
 
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     if (formattedTranscript.length === 0) {
       return NextResponse.json(
         { error: 'No user/avatar messages to save' },
-        { status: 400 }
+        { status: 200 }
       );
     }
 
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     console.error('Error saving transcript:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to save transcript' },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }
