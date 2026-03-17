@@ -1,142 +1,176 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import WelcomeScreen from './WelcomeScreen';
+import ProductSelectionModal from './ProductSelectionScreen';
 import LiveKitComponent from './LivekitComponent';
+import ThankYouScreen from './ThankYouScreen';
 import { TranscriptMessage } from '../hooks/useTranscript';
 
+type Screen = 'welcome' | 'chat' | 'thankyou';
+
+// Keywords in ARIA's speech that trigger the product selection modal
+const PRODUCT_TRIGGER_PHRASES = [
+  'select from the options',
+  'choose from the options',
+  'which product',
+  'select a product',
+  'choose a product',
+  'interested in learning',
+  'would you like to explore',
+  'select the product',
+  'pick a product',
+  'shown to talk about',
+];
+
 export default function AvatarComponent() {
-  const [isChatActive, setIsChatActive] = useState(false);
+  const [screen, setScreen] = useState<Screen>('welcome');
+  const [selectedProduct, setSelectedProduct] = useState('General');
+  const [connectionKey, setConnectionKey] = useState(0);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productModalShown, setProductModalShown] = useState(false);
+  const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
 
-  const handleStartChat = async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-    setTranscript([]); // Clear previous transcript
-    setIsChatActive(true);
-  };
+  // Detect ARIA asking user to select a product
+  useEffect(() => {
+    if (screen !== 'chat' || productModalShown || showProductModal) return;
 
-  const handleEndChat = async () => {
-    // Save transcript to database before ending chat
-    if (transcript.length > 0) {
-      try {
-        setIsSaving(true);
-        console.log('💾 Starting to save transcript...');
-        
-        // Format transcript for saving (only user and avatar messages)
-        const formattedTranscript = transcript
-          .filter(msg => msg.type !== 'system')
-          .map(msg => ({
-            timestamp: msg.timestamp.toISOString(),
-            speaker: msg.sender,
-            message: msg.message,
-            type: msg.type,
-          }));
+    const ariaMessages = transcript.filter((m) => m.type === 'avatar');
+    if (ariaMessages.length === 0) return;
 
-        if (formattedTranscript.length === 0) {
-          console.log('⚠️ No messages to save (only system messages)');
-          setIsChatActive(false);
-          setTranscript([]);
-          setIsLoading(false);
-          setIsSaving(false);
-          return;
-        }
+    const lastMsg = ariaMessages[ariaMessages.length - 1].message.toLowerCase();
+    const triggered = PRODUCT_TRIGGER_PHRASES.some((phrase) => lastMsg.includes(phrase));
 
-        console.log(`📊 Saving ${formattedTranscript.length} messages...`);
-
-        // Call API to save transcript with timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-        const response = await fetch('/api/save-transcript', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ transcript: formattedTranscript }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const result = await response.json();
-
-        if (result.success) {
-          console.log('✅ Transcript saved successfully');
-          console.log(`💾 Saved for: ${result.name} from ${result.company}`);
-          console.log(`📊 Messages saved: ${result.message_count}`);
-        } else {
-          console.error('❌ Failed to save transcript:', result.error);
-          setErrorMessage(`Failed to save conversation: ${result.error}`);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.error('❌ Save timeout: Taking too long');
-          setErrorMessage('Save is taking longer than expected. It may still complete in the background.');
-        } else {
-          console.error('❌ Error saving transcript:', error);
-          setErrorMessage('Failed to save conversation. Please check the console for details.');
-        }
-      } finally {
-        setIsSaving(false);
-      }
-    } else {
-      console.log('ℹ️ No transcript to save');
+    if (triggered) {
+      // Small delay so ARIA finishes the sentence first
+      setTimeout(() => {
+        setShowProductModal(true);
+        setProductModalShown(true);
+      }, 800);
     }
+  }, [transcript, screen, productModalShown, showProductModal]);
 
-    setIsChatActive(false);
+  // ── Handlers ──────────────────────────────────────────────
+
+  const handleStartConversation = useCallback(() => {
+    setErrorMessage('');
     setTranscript([]);
-    setIsLoading(false);
-  };
+    setProductModalShown(false);
+    setShowProductModal(false);
+    setSelectedProduct('General');
+    setConnectionKey((k) => k + 1);
+    setScreen('chat');
+  }, []);
 
-  const handleError = (error: string) => {
+  const handleProductSelected = useCallback((product: string) => {
+    setShowProductModal(false);
+    setSelectedProduct(product);
+    // No reconnect — LiveKitComponent sends a data message to the live room
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setShowProductModal(false);
+  }, []);
+
+  const handleEndConversation = useCallback(() => {
+    setScreen('thankyou');
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    setScreen('welcome');
+    setSelectedProduct('General');
+    setTranscript([]);
+    setProductModalShown(false);
+    setShowProductModal(false);
+    setErrorMessage('');
+    setIsLoading(false);
+  }, []);
+
+  const handleExplore = useCallback(() => {
+    // Return to welcome to let them see the product info
+    setScreen('welcome');
+    setSelectedProduct('General');
+    setTranscript([]);
+    setProductModalShown(false);
+    setShowProductModal(false);
+    setErrorMessage('');
+    setIsLoading(false);
+  }, []);
+
+  const handleError = useCallback((error: string) => {
     setErrorMessage(error);
-    setIsChatActive(false);
     setIsLoading(false);
-  };
+  }, []);
 
-  const handleTranscriptUpdate = (newTranscript: TranscriptMessage[]) => {
+  const handleTranscriptUpdate = useCallback((newTranscript: TranscriptMessage[]) => {
     setTranscript(newTranscript);
-  };
+  }, []);
 
+  // ── Render ─────────────────────────────────────────────────
+
+  if (screen === 'welcome') {
+    return (
+      <WelcomeScreen
+        onStartChat={handleStartConversation}
+        errorMessage={errorMessage}
+        isLoading={isLoading}
+      />
+    );
+  }
+
+  if (screen === 'thankyou') {
+    return (
+      <ThankYouScreen
+        onRestart={handleRestart}
+        onExplore={handleExplore}
+      />
+    );
+  }
+
+  // screen === 'chat'
   return (
-    <div className="container">
-      {!isChatActive ? (
-        <WelcomeScreen 
-          onStartChat={handleStartChat} 
-          errorMessage={errorMessage}
-          isLoading={isLoading}
-        />
-      ) : (
-        <div className="chat-interface active" id="chatInterface">
-          <div className="chat-header">
-            <h2>
-              <span className="status-indicator" />
-              Aria - AI Assistant
-            </h2>
-            <button 
-              className="end-button" 
-              id="endChatBtn" 
-              onClick={handleEndChat}
-              disabled={isSaving}
-            >
-              {isSaving ? '💾 Saving...' : 'End Chat'}
-            </button>
-          </div>
-
-          <div className="main-content">
-            <LiveKitComponent 
-              isActive={isChatActive} 
-              onError={handleError}
-              onTranscriptUpdate={handleTranscriptUpdate}
-            />
-          </div>
+    <div className="chat-page">
+      {/* Top Navigation Bar */}
+      <div className="chat-topbar">
+        <div className="chat-topbar-left">
+          <div className="chat-logo-box">T</div>
+          <span className="chat-brand-name">Tekisho</span>
+          <div className="chat-brand-sep" />
+          <span className="chat-brand-sub">AI Growth Forum</span>
         </div>
+        <div className="chat-topbar-right">
+          <div className="chat-status-pill">
+            <span className={`status-dot ${transcript.length > 0 ? 'connected' : 'connecting'}`} />
+            {transcript.length > 0 ? 'Live' : 'Connecting...'}
+          </div>
+          <button className="end-conv-btn" onClick={handleEndConversation}>
+            End Conversation
+          </button>
+        </div>
+      </div>
+
+      {/* Main Split: Avatar + Transcript */}
+      <div className="chat-body">
+        <LiveKitComponent
+          key={connectionKey}
+          isActive={true}
+          selectedProduct={selectedProduct}
+          onError={handleError}
+          onTranscriptUpdate={handleTranscriptUpdate}
+        />
+      </div>
+
+      {/* Product Selection Modal (triggered by ARIA) */}
+      {showProductModal && (
+        <ProductSelectionModal
+          onProductSelected={handleProductSelected}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   );
 }
+
 

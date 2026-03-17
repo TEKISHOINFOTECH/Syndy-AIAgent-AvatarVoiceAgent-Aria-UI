@@ -112,6 +112,14 @@ export function useLiveKit() {
     return false;
   }, []);
 
+  const sendData = useCallback(async (payload: object) => {
+    if (roomRef.current) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(JSON.stringify(payload));
+      await roomRef.current.localParticipant.publishData(data, { reliable: true });
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnectRoom();
@@ -124,5 +132,6 @@ export function useLiveKit() {
     connectToRoom,
     disconnectRoom,
     toggleMicrophone,
+    sendData,
   };
 }

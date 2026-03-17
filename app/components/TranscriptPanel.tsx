@@ -5,11 +5,10 @@ import { TranscriptMessage } from '../hooks/useTranscript';
 
 interface TranscriptPanelProps {
   transcript: TranscriptMessage[];
-  isVisible: boolean;
   onClear: () => void;
 }
 
-export default function TranscriptPanel({ transcript, isVisible, onClear }: TranscriptPanelProps) {
+export default function TranscriptPanel({ transcript, onClear }: TranscriptPanelProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -18,8 +17,6 @@ export default function TranscriptPanel({ transcript, isVisible, onClear }: Tran
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [transcript]);
-
-  if (!isVisible) return null;
 
   const formatTimestamp = (date: Date): string => {
     return date.toLocaleTimeString('en-US', {
@@ -30,31 +27,37 @@ export default function TranscriptPanel({ transcript, isVisible, onClear }: Tran
   };
 
   return (
-    <div className="transcript-section" id="transcriptSection">
-      <div className="transcript-header">
-        <h3>Conversation Transcript</h3>
-        <button 
-          className="clear-transcript" 
-          id="clearTranscript"
-          onClick={onClear} 
-          title="Clear Transcript"
+    <div className="transcript-side">
+      <div className="transcript-side-header">
+        <div className="transcript-side-title">
+          <div className="transcript-title-bar" />
+          Conversation Transcript
+        </div>
+        <button
+          className="transcript-clear-btn"
+          onClick={onClear}
+          title="Clear transcript"
         >
-          🗑️
+          🗑
         </button>
       </div>
-      <div className="transcript-content" id="transcriptContent" ref={contentRef}>
+
+      <div className="transcript-messages" ref={contentRef}>
         {transcript.length === 0 ? (
-          <div className="empty-transcript">
-            <p>No messages yet. Start speaking...</p>
+          <div className="t-empty-state">
+            <div className="t-empty-icon">💬</div>
+            <p>Conversation will appear here...</p>
           </div>
         ) : (
           transcript.map((message, index) => (
-            <div key={index} className={`transcript-message ${message.type}`}>
-              <div className="message-meta">
-                <span className="speaker">{message.sender}</span>
-                <span className="timestamp">{formatTimestamp(message.timestamp)}</span>
+            <div key={index} className={`t-msg ${message.type === 'avatar' ? 'aria' : message.type}`}>
+              <div className="t-msg-meta">
+                <span className={`t-msg-sender ${message.type === 'avatar' ? 'aria' : message.type}`}>
+                  {message.sender}
+                </span>
+                <span className="t-msg-time">{formatTimestamp(message.timestamp)}</span>
               </div>
-              <div className="message-text">{message.message}</div>
+              <div className="t-msg-bubble">{message.message}</div>
             </div>
           ))
         )}

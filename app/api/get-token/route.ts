@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const product = searchParams.get('product') || 'General';
     const roomName = `avatar-room-${Date.now()}`;
     const participantName = `user-${Date.now()}`;
 
@@ -10,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     // Request token from backend
     const response = await fetch(
-      `${backendUrl}/getToken?name=${participantName}&room=${roomName}`,
+      `${backendUrl}/getToken?name=${participantName}&room=${roomName}&product=${encodeURIComponent(product)}`,
       {
         method: 'GET',
         headers: {
