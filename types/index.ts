@@ -23,3 +23,12 @@ export interface ChatState {
   isLoading: boolean;
   error: string | null;
 }
+
+export interface VisitorData {
+  name: string;
+  company: string;
+  email: string;
+  phone: string;
+}
+
+export type ChatPhase = 'form' | 'exploring';

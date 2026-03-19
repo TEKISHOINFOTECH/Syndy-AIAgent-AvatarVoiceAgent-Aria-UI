@@ -1,100 +1,131 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import WelcomeScreen from './WelcomeScreen';
-import ProductSelectionModal from './ProductSelectionScreen';
 import LiveKitComponent from './LivekitComponent';
 import ThankYouScreen from './ThankYouScreen';
+import FormOverlay from './FormOverlay';
 import { TranscriptMessage } from '../hooks/useTranscript';
+import { VisitorData, ChatPhase } from '@/types';
 
 type Screen = 'welcome' | 'chat' | 'thankyou';
 
-// Keywords in ARIA's speech that trigger the product selection modal
-const PRODUCT_TRIGGER_PHRASES = [
-  'select from the options',
-  'choose from the options',
-  'which product',
-  'select a product',
-  'choose a product',
-  'interested in learning',
-  'would you like to explore',
-  'select the product',
-  'pick a product',
-  'shown to talk about',
-];
-
 export default function AvatarComponent() {
   const [screen, setScreen] = useState<Screen>('welcome');
-  const [selectedProduct, setSelectedProduct] = useState('General');
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [productModalShown, setProductModalShown] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Detect ARIA asking user to select a product
+  // ── Form orchestration state ─────────────────────────────
+  const [visitorData, setVisitorData] = useState<VisitorData | null>(null);
+  const [chatPhase, setChatPhase] = useState<ChatPhase>('form');
+  const [showFormOverlay, setShowFormOverlay] = useState(false);
+  const formShownRef = useRef(false);
+
+  // Reference to the sendData function exposed by LiveKitComponent
+  const sendDataRef = useRef<((payload: object) => Promise<void>) | null>(null);
+
+  // ── Show form overlay after ARIA's first spoken message ───
   useEffect(() => {
-    if (screen !== 'chat' || productModalShown || showProductModal) return;
+    if (screen !== 'chat' || chatPhase !== 'form' || formShownRef.current) return;
 
     const ariaMessages = transcript.filter((m) => m.type === 'avatar');
     if (ariaMessages.length === 0) return;
 
-    const lastMsg = ariaMessages[ariaMessages.length - 1].message.toLowerCase();
-    const triggered = PRODUCT_TRIGGER_PHRASES.some((phrase) => lastMsg.includes(phrase));
+    // ARIA has spoken — show form after a brief delay
+    const timer = setTimeout(() => {
+      setShowFormOverlay(true);
+      formShownRef.current = true;
+    }, 1000);
 
-    if (triggered) {
-      // Small delay so ARIA finishes the sentence first
-      setTimeout(() => {
-        setShowProductModal(true);
-        setProductModalShown(true);
-      }, 800);
-    }
-  }, [transcript, screen, productModalShown, showProductModal]);
+    return () => clearTimeout(timer);
+  }, [transcript, screen, chatPhase]);
 
   // ── Handlers ──────────────────────────────────────────────
 
   const handleStartConversation = useCallback(() => {
     setErrorMessage('');
     setTranscript([]);
-    setProductModalShown(false);
-    setShowProductModal(false);
-    setSelectedProduct('General');
+    setSelectedProduct(null);
+    setVisitorData(null);
+    setChatPhase('form');
+    setShowFormOverlay(false);
+    formShownRef.current = false;
     setConnectionKey((k) => k + 1);
     setScreen('chat');
   }, []);
 
-  const handleProductSelected = useCallback((product: string) => {
-    setShowProductModal(false);
-    setSelectedProduct(product);
-    // No reconnect — LiveKitComponent sends a data message to the live room
-  }, []);
+  const handleFormSubmit = useCallback(async (data: VisitorData) => {
+    setVisitorData(data);
 
-  const handleCloseModal = useCallback(() => {
-    setShowProductModal(false);
+    // POST to save-visitor API (non-blocking)
+    try {
+      await fetch('/api/save-visitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch {
+      // Non-blocking — don't fail on save error
+    }
+
+    // Close overlay and transition to exploring phase
+    setShowFormOverlay(false);
+    setChatPhase('exploring');
+
+    // Notify backend via LiveKit data channel
+    if (sendDataRef.current) {
+      try {
+        await sendDataRef.current({
+          type: 'visitor_registered',
+          name: data.name,
+          company: data.company,
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
   }, []);
 
   const handleEndConversation = useCallback(() => {
+    // Save transcript to backend (non-blocking)
+    if (transcript.length > 0) {
+      fetch('/api/save-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          visitorName: visitorData?.name || '',
+          visitorEmail: visitorData?.email || '',
+          productDiscussed: selectedProduct || 'General',
+        }),
+      }).catch(() => {});
+    }
     setScreen('thankyou');
-  }, []);
+  }, [transcript, visitorData, selectedProduct]);
 
   const handleRestart = useCallback(() => {
     setScreen('welcome');
-    setSelectedProduct('General');
+    setSelectedProduct(null);
     setTranscript([]);
-    setProductModalShown(false);
-    setShowProductModal(false);
+    setVisitorData(null);
+    setChatPhase('form');
+    setShowFormOverlay(false);
+    formShownRef.current = false;
     setErrorMessage('');
     setIsLoading(false);
   }, []);
 
   const handleExplore = useCallback(() => {
-    // Return to welcome to let them see the product info
     setScreen('welcome');
-    setSelectedProduct('General');
+    setSelectedProduct(null);
     setTranscript([]);
-    setProductModalShown(false);
-    setShowProductModal(false);
+    setVisitorData(null);
+    setChatPhase('form');
+    setShowFormOverlay(false);
+    formShownRef.current = false;
     setErrorMessage('');
     setIsLoading(false);
   }, []);
@@ -106,6 +137,10 @@ export default function AvatarComponent() {
 
   const handleTranscriptUpdate = useCallback((newTranscript: TranscriptMessage[]) => {
     setTranscript(newTranscript);
+  }, []);
+
+  const handleSendDataReady = useCallback((sendDataFn: (payload: object) => Promise<void>) => {
+    sendDataRef.current = sendDataFn;
   }, []);
 
   // ── Render ─────────────────────────────────────────────────
@@ -131,7 +166,7 @@ export default function AvatarComponent() {
 
   // screen === 'chat'
   return (
-    <div className="chat-page">
+    <div className="chat-page" style={{ position: 'relative' }}>
       {/* Top Navigation Bar */}
       <div className="chat-topbar">
         <div className="chat-topbar-left">
@@ -156,18 +191,16 @@ export default function AvatarComponent() {
         <LiveKitComponent
           key={connectionKey}
           isActive={true}
-          selectedProduct={selectedProduct}
+          selectedProduct={selectedProduct || 'General'}
           onError={handleError}
           onTranscriptUpdate={handleTranscriptUpdate}
+          onSendDataReady={handleSendDataReady}
         />
       </div>
 
-      {/* Product Selection Modal (triggered by ARIA) */}
-      {showProductModal && (
-        <ProductSelectionModal
-          onProductSelected={handleProductSelected}
-          onClose={handleCloseModal}
-        />
+      {/* Form Overlay — rendered ON TOP of chat, avatar stays visible behind */}
+      {showFormOverlay && (
+        <FormOverlay isVisible={showFormOverlay} onSubmit={handleFormSubmit} />
       )}
     </div>
   );

@@ -10,9 +10,10 @@ interface LiveKitComponentProps {
   selectedProduct: string;
   onError: (error: string) => void;
   onTranscriptUpdate?: (transcript: TranscriptMessage[]) => void;
+  onSendDataReady?: (sendDataFn: (payload: object) => Promise<void>) => void;
 }
 
-export default function LiveKitComponent({ isActive, selectedProduct, onError, onTranscriptUpdate }: LiveKitComponentProps) {
+export default function LiveKitComponent({ isActive, selectedProduct, onError, onTranscriptUpdate, onSendDataReady }: LiveKitComponentProps) {
   const { room, connectionStatus, connectToRoom, disconnectRoom, toggleMicrophone, sendData } = useLiveKit();
   const { transcript, clearTranscript } = useTranscript({ room });
   const [isMicMuted, setIsMicMuted] = useState(false);
@@ -25,6 +26,13 @@ export default function LiveKitComponent({ isActive, selectedProduct, onError, o
       onTranscriptUpdate(transcript);
     }
   }, [transcript, onTranscriptUpdate]);
+
+  // Expose sendData to parent once connected
+  useEffect(() => {
+    if (onSendDataReady && isConnectedRef.current) {
+      onSendDataReady(sendData);
+    }
+  }, [onSendDataReady, sendData]);
 
   useEffect(() => {
     if (isActive) {
@@ -57,6 +65,7 @@ export default function LiveKitComponent({ isActive, selectedProduct, onError, o
 
       await connectToRoom({ url: livekitUrl, token: data.token });
       isConnectedRef.current = true;
+      if (onSendDataReady) onSendDataReady(sendData);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Connection failed';
       console.error('Connection error:', msg);
