@@ -46,8 +46,12 @@ export default function FormOverlay({ isVisible, onSubmit }: FormOverlayProps) {
 
     if (!phone.trim()) {
       newErrors.phone = 'Contact number is required';
-    } else if (!/^[+]?[\d\s\-()]{7,20}$/.test(phone.trim())) {
-      newErrors.phone = 'Enter a valid phone number';
+    } else {
+      // Strip all non-digit characters to count actual digits
+      const digitsOnly = phone.trim().replace(/\D/g, '');
+      if (digitsOnly.length !== 10) {
+        newErrors.phone = 'Phone number must be exactly 10 digits';
+      }
     }
 
     setErrors(newErrors);
@@ -278,9 +282,15 @@ export default function FormOverlay({ isVisible, onSubmit }: FormOverlayProps) {
               borderColor: errors.phone ? '#f87171' : 'rgba(255,255,255,0.12)',
             }}
             type="tel"
-            placeholder="e.g. +91 98765 43210"
+            placeholder="e.g. 9876543210"
             value={phone}
-            onChange={(e) => { setPhone(e.target.value); setErrors((p) => ({ ...p, phone: undefined })); }}
+            maxLength={10}
+            onChange={(e) => {
+              // Allow only digits
+              const val = e.target.value.replace(/\D/g, '');
+              setPhone(val);
+              setErrors((p) => ({ ...p, phone: undefined }));
+            }}
             onFocus={(e) => { e.currentTarget.style.boxShadow = inputFocusRing; e.currentTarget.style.borderColor = '#3b82f6'; }}
             onBlur={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = errors.phone ? '#f87171' : 'rgba(255,255,255,0.12)'; }}
             onKeyDown={handleKeyDown}

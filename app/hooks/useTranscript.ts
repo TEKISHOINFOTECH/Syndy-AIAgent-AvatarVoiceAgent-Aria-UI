@@ -6,6 +6,7 @@ import { Room } from 'livekit-client';
 export interface TranscriptMessage {
   type: 'system' | 'avatar' | 'user';
   sender: string;
+  speaker: string;  // alias for sender — needed by save-transcript API
   message: string;
   timestamp: Date;
 }
@@ -23,6 +24,7 @@ export function useTranscript({ room }: UseTranscriptProps) {
       const newMessage: TranscriptMessage = {
         type,
         sender,
+        speaker: sender,  // keep in sync — save-transcript API reads this field
         message,
         timestamp: new Date(),
       };

@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5001';
 
     console.log(
-      `📝 Saving transcript (${formattedMessages.length} msgs) for ${visitorName} → ${backendUrl}/save-transcript`
+      `📝 Saving transcript (${formattedMessages.length} msgs) for ${visitorName} (${visitorEmail}) → ${backendUrl}/save-transcript`
     );
 
     const response = await fetch(`${backendUrl}/save-transcript`, {

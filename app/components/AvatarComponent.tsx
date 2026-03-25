@@ -43,6 +43,31 @@ export default function AvatarComponent() {
     return () => clearTimeout(timer);
   }, [transcript, screen, chatPhase]);
 
+  // ── Auto-detect product discussed from transcript ────────
+  useEffect(() => {
+    if (transcript.length === 0) return;
+
+    // Only consider avatar and user messages (not system)
+    const relevantMessages = transcript.filter(
+      (m) => m.type === 'avatar' || m.type === 'user'
+    );
+    if (relevantMessages.length === 0) return;
+
+    // Combine all message text for product detection
+    const allText = relevantMessages.map((m) => m.message).join(' ').toLowerCase();
+
+    // Detect which products were discussed
+    const products: string[] = [];
+    if (/\b(vocalq|vocal-q|vocal q)\b/i.test(allText)) products.push('VocalQ');
+    if (/\b(leadq|lead-q|lead q)\b/i.test(allText)) products.push('LeadQ');
+    if (/\b(emailq|email-q|email q)\b/i.test(allText)) products.push('EmailQ');
+
+    if (products.length > 0) {
+      // Use the most recently mentioned product, or join if multiple
+      setSelectedProduct(products.join(', '));
+    }
+  }, [transcript]);
+
   // ── Handlers ──────────────────────────────────────────────
 
   const handleStartConversation = useCallback(() => {
@@ -75,33 +100,54 @@ export default function AvatarComponent() {
     setShowFormOverlay(false);
     setChatPhase('exploring');
 
-    // Notify backend via LiveKit data channel
-    if (sendDataRef.current) {
-      try {
-        await sendDataRef.current({
-          type: 'visitor_registered',
-          name: data.name,
-          company: data.company,
-        });
-      } catch {
-        // Non-blocking
+    // Notify backend via LiveKit data channel (with retry if sendData isn't ready yet)
+    const sendVisitorData = async (retriesLeft: number) => {
+      if (sendDataRef.current) {
+        try {
+          await sendDataRef.current({
+            type: 'visitor_registered',
+            name: data.name,
+            company: data.company,
+          });
+          console.log('✅ visitor_registered sent via data channel');
+        } catch (err) {
+          console.warn('⚠ Failed to send visitor_registered:', err);
+        }
+      } else if (retriesLeft > 0) {
+        // sendDataRef not ready yet — retry after a short delay
+        console.log(`⏳ sendData not ready, retrying... (${retriesLeft} left)`);
+        await new Promise((r) => setTimeout(r, 500));
+        await sendVisitorData(retriesLeft - 1);
+      } else {
+        console.warn('⚠ sendData was never ready — visitor_registered not sent');
       }
-    }
+    };
+    sendVisitorData(5);  // up to 5 retries (2.5s total)
   }, []);
 
   const handleEndConversation = useCallback(() => {
     // Save transcript to backend (non-blocking)
     if (transcript.length > 0) {
+      const saveName = visitorData?.name || '';
+      const saveEmail = visitorData?.email || '';
+      const saveProduct = selectedProduct || 'General';
+      console.log(`🔚 Ending conversation — saving ${transcript.length} messages for ${saveName} (${saveEmail}), product: ${saveProduct}`);
+
       fetch('/api/save-transcript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript,
-          visitorName: visitorData?.name || '',
-          visitorEmail: visitorData?.email || '',
-          productDiscussed: selectedProduct || 'General',
+          visitorName: saveName,
+          visitorEmail: saveEmail,
+          productDiscussed: saveProduct,
         }),
-      }).catch(() => {});
+      })
+        .then((res) => res.json())
+        .then((data) => console.log('✅ Transcript save response:', data))
+        .catch((err) => console.error('❌ Transcript save failed:', err));
+    } else {
+      console.warn('⚠ No transcript messages to save');
     }
     setScreen('thankyou');
   }, [transcript, visitorData, selectedProduct]);
