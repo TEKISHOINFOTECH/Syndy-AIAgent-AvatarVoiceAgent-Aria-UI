@@ -9,6 +9,7 @@ export function useLiveKit() {
     status: 'disconnected',
   });
   const [room, setRoom] = useState<Room | null>(null);
+  const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
   const roomRef = useRef<Room | null>(null);
 
   const connectToRoom = useCallback(async (config: LiveKitConfig) => {
@@ -27,11 +28,17 @@ export function useLiveKit() {
       newRoom.on(RoomEvent.Disconnected, handleDisconnected);
       newRoom.on(RoomEvent.DataReceived, handleDataReceived);
       newRoom.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      newRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        const ariaIsSpeaking = speakers.some(
+          (p) => p.identity !== newRoom.localParticipant.identity
+        );
+        setIsRemoteSpeaking(ariaIsSpeaking);
+      });
 
       await newRoom.connect(config.url, config.token);
       
-      // Enable microphone
-      await newRoom.localParticipant.setMicrophoneEnabled(true);
+      // Mic stays OFF on connect — enabled later when form is submitted
+      await newRoom.localParticipant.setMicrophoneEnabled(false);
       
       setRoom(newRoom);
       setConnectionStatus({ status: 'connected', message: 'Connected successfully' });
@@ -112,6 +119,12 @@ export function useLiveKit() {
     return false;
   }, []);
 
+  const enableMicrophone = useCallback(async () => {
+    if (roomRef.current) {
+      await roomRef.current.localParticipant.setMicrophoneEnabled(true);
+    }
+  }, []);
+
   const sendData = useCallback(async (payload: object) => {
     if (roomRef.current) {
       const encoder = new TextEncoder();
@@ -129,9 +142,11 @@ export function useLiveKit() {
   return {
     room,
     connectionStatus,
+    isRemoteSpeaking,
     connectToRoom,
     disconnectRoom,
     toggleMicrophone,
+    enableMicrophone,
     sendData,
   };
 }

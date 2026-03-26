@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { transcript, visitorName, visitorEmail, productDiscussed } =
+    const { transcript, visitorName, visitorEmail } =
       await request.json();
 
     if (!transcript || transcript.length === 0) {
@@ -41,7 +41,6 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         visitor_name: visitorName,
         visitor_email: visitorEmail,
-        product_discussed: productDiscussed,
         messages: formattedMessages,
         timestamp: new Date().toISOString(),
       }),

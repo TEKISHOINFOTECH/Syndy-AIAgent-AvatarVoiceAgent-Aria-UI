@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import WelcomeScreen from './WelcomeScreen';
-import LiveKitComponent from './LivekitComponent';
+import LiveKitComponent, { LiveKitComponentHandle } from './LivekitComponent';
 import ThankYouScreen from './ThankYouScreen';
 import FormOverlay from './FormOverlay';
 import { TranscriptMessage } from '../hooks/useTranscript';
@@ -12,7 +12,6 @@ type Screen = 'welcome' | 'chat' | 'thankyou';
 
 export default function AvatarComponent() {
   const [screen, setScreen] = useState<Screen>('welcome');
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
@@ -26,60 +25,50 @@ export default function AvatarComponent() {
 
   // Reference to the sendData function exposed by LiveKitComponent
   const sendDataRef = useRef<((payload: object) => Promise<void>) | null>(null);
+  const liveKitRef = useRef<LiveKitComponentHandle>(null);
 
-  // ── Show form overlay after ARIA's first spoken message ───
+  // ── ARIA speaking state for form-show timing ──────────────
+  const [ariaSpeaking, setAriaSpeaking] = useState(false);
+  const ariaHasSpokenRef = useRef(false);
+
+  // ── Show form overlay after ARIA finishes her intro ───────
   useEffect(() => {
+    // Only trigger during form phase, only once
     if (screen !== 'chat' || chatPhase !== 'form' || formShownRef.current) return;
 
-    const ariaMessages = transcript.filter((m) => m.type === 'avatar');
-    if (ariaMessages.length === 0) return;
+    // Wait for ARIA to have started AND then stopped speaking
+    if (!ariaHasSpokenRef.current) return;  // ARIA hasn't started yet
+    if (ariaSpeaking) return;               // ARIA is still talking — wait
 
-    // ARIA has spoken — show form after a brief delay
+    // ARIA has finished speaking — show form after 800ms natural pause
     const timer = setTimeout(() => {
+      if (formShownRef.current) return;     // double-guard against double fire
       setShowFormOverlay(true);
       formShownRef.current = true;
-    }, 1000);
+      liveKitRef.current?.muteARIA();
+    }, 800);
 
     return () => clearTimeout(timer);
-  }, [transcript, screen, chatPhase]);
-
-  // ── Auto-detect product discussed from transcript ────────
-  useEffect(() => {
-    if (transcript.length === 0) return;
-
-    // Only consider avatar and user messages (not system)
-    const relevantMessages = transcript.filter(
-      (m) => m.type === 'avatar' || m.type === 'user'
-    );
-    if (relevantMessages.length === 0) return;
-
-    // Combine all message text for product detection
-    const allText = relevantMessages.map((m) => m.message).join(' ').toLowerCase();
-
-    // Detect which products were discussed
-    const products: string[] = [];
-    if (/\b(vocalq|vocal-q|vocal q)\b/i.test(allText)) products.push('VocalQ');
-    if (/\b(leadq|lead-q|lead q)\b/i.test(allText)) products.push('LeadQ');
-    if (/\b(emailq|email-q|email q)\b/i.test(allText)) products.push('EmailQ');
-
-    if (products.length > 0) {
-      // Use the most recently mentioned product, or join if multiple
-      setSelectedProduct(products.join(', '));
-    }
-  }, [transcript]);
+  }, [ariaSpeaking, screen, chatPhase]);
 
   // ── Handlers ──────────────────────────────────────────────
 
   const handleStartConversation = useCallback(() => {
     setErrorMessage('');
     setTranscript([]);
-    setSelectedProduct(null);
     setVisitorData(null);
     setChatPhase('form');
     setShowFormOverlay(false);
     formShownRef.current = false;
+    ariaHasSpokenRef.current = false;
+    setAriaSpeaking(false);
     setConnectionKey((k) => k + 1);
     setScreen('chat');
+  }, []);
+
+  const handleARIASpeakingChanged = useCallback((isSpeaking: boolean) => {
+    setAriaSpeaking(isSpeaking);
+    if (isSpeaking) ariaHasSpokenRef.current = true;
   }, []);
 
   const handleFormSubmit = useCallback(async (data: VisitorData) => {
@@ -99,6 +88,10 @@ export default function AvatarComponent() {
     // Close overlay and transition to exploring phase
     setShowFormOverlay(false);
     setChatPhase('exploring');
+
+    // Wait briefly, then unmute ARIA and enable mic before notifying backend
+    await new Promise((r) => setTimeout(r, 1500));
+    liveKitRef.current?.activateConversation();
 
     // Notify backend via LiveKit data channel (with retry if sendData isn't ready yet)
     const sendVisitorData = async (retriesLeft: number) => {
@@ -130,8 +123,7 @@ export default function AvatarComponent() {
     if (transcript.length > 0) {
       const saveName = visitorData?.name || '';
       const saveEmail = visitorData?.email || '';
-      const saveProduct = selectedProduct || 'General';
-      console.log(`🔚 Ending conversation — saving ${transcript.length} messages for ${saveName} (${saveEmail}), product: ${saveProduct}`);
+      console.log(`🔚 Ending conversation — saving ${transcript.length} messages for ${saveName} (${saveEmail})`);
 
       fetch('/api/save-transcript', {
         method: 'POST',
@@ -140,7 +132,6 @@ export default function AvatarComponent() {
           transcript,
           visitorName: saveName,
           visitorEmail: saveEmail,
-          productDiscussed: saveProduct,
         }),
       })
         .then((res) => res.json())
@@ -149,12 +140,18 @@ export default function AvatarComponent() {
     } else {
       console.warn('⚠ No transcript messages to save');
     }
-    setScreen('thankyou');
-  }, [transcript, visitorData, selectedProduct]);
+    setScreen('welcome');
+    setTranscript([]);
+    setVisitorData(null);
+    setChatPhase('form');
+    setShowFormOverlay(false);
+    formShownRef.current = false;
+    setErrorMessage('');
+    setIsLoading(false);
+  }, [transcript, visitorData]);
 
   const handleRestart = useCallback(() => {
     setScreen('welcome');
-    setSelectedProduct(null);
     setTranscript([]);
     setVisitorData(null);
     setChatPhase('form');
@@ -166,7 +163,6 @@ export default function AvatarComponent() {
 
   const handleExplore = useCallback(() => {
     setScreen('welcome');
-    setSelectedProduct(null);
     setTranscript([]);
     setVisitorData(null);
     setChatPhase('form');
@@ -235,12 +231,13 @@ export default function AvatarComponent() {
       {/* Main Split: Avatar + Transcript */}
       <div className="chat-body">
         <LiveKitComponent
+          ref={liveKitRef}
           key={connectionKey}
           isActive={true}
-          selectedProduct={selectedProduct || 'General'}
           onError={handleError}
           onTranscriptUpdate={handleTranscriptUpdate}
           onSendDataReady={handleSendDataReady}
+          onARIASpeakingChanged={handleARIASpeakingChanged}
         />
       </div>
 

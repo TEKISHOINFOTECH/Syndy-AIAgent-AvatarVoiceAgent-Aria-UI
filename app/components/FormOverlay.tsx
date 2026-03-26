@@ -204,12 +204,6 @@ export default function FormOverlay({ isVisible, onSubmit }: FormOverlayProps) {
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
-        {/* ARIA context hint */}
-        <div style={ariaHintStyle}>
-          <span>🤖</span>
-          <span>ARIA is waiting — fill this in to continue the conversation</span>
-        </div>
-
         <div style={titleStyle}>Welcome to Tekisho Conclave</div>
         <div style={subtitleStyle}>
           Tell us a bit about yourself so ARIA can personalise your experience.
