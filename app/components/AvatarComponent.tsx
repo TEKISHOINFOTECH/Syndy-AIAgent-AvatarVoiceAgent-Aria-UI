@@ -30,6 +30,7 @@ export default function AvatarComponent() {
   // ── ARIA speaking state for form-show timing ──────────────
   const [ariaSpeaking, setAriaSpeaking] = useState(false);
   const ariaHasSpokenRef = useRef(false);
+  const ariaStartedSpeakingAt = useRef<number | null>(null);
 
   // ── Show form overlay after ARIA finishes her intro ───────
   useEffect(() => {
@@ -40,13 +41,21 @@ export default function AvatarComponent() {
     if (!ariaHasSpokenRef.current) return;  // ARIA hasn't started yet
     if (ariaSpeaking) return;               // ARIA is still talking — wait
 
-    // ARIA has finished speaking — show form after 800ms natural pause
+    // Only allow form to show if ARIA has been speaking for at least 3s total
+    // This ensures a full intro sentence was delivered, not a brief glitch
+    const speakingDuration = ariaStartedSpeakingAt.current
+      ? Date.now() - ariaStartedSpeakingAt.current
+      : 0;
+    if (speakingDuration < 3000) return;
+
+    // ARIA has finished speaking — show form after 1500ms natural pause
+    // (long enough to survive inter-sentence TTS pauses)
     const timer = setTimeout(() => {
       if (formShownRef.current) return;     // double-guard against double fire
       setShowFormOverlay(true);
       formShownRef.current = true;
       liveKitRef.current?.muteARIA();
-    }, 800);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [ariaSpeaking, screen, chatPhase]);
@@ -61,6 +70,7 @@ export default function AvatarComponent() {
     setShowFormOverlay(false);
     formShownRef.current = false;
     ariaHasSpokenRef.current = false;
+    ariaStartedSpeakingAt.current = null;
     setAriaSpeaking(false);
     setConnectionKey((k) => k + 1);
     setScreen('chat');
@@ -68,7 +78,12 @@ export default function AvatarComponent() {
 
   const handleARIASpeakingChanged = useCallback((isSpeaking: boolean) => {
     setAriaSpeaking(isSpeaking);
-    if (isSpeaking) ariaHasSpokenRef.current = true;
+    if (isSpeaking) {
+      ariaHasSpokenRef.current = true;
+      if (!ariaStartedSpeakingAt.current) {
+        ariaStartedSpeakingAt.current = Date.now();
+      }
+    }
   }, []);
 
   const handleFormSubmit = useCallback(async (data: VisitorData) => {
